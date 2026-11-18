@@ -326,6 +326,8 @@ h1, h2, p, figure { margin: 0; }
 .game {
   --quiz-width: clamp(342px, 32vw, 410px);
   --game-inset: 12px;
+  /* 問題卡向左使用地圖右側的空間，地圖景物位置保持不變。 */
+  --quiz-extension: clamp(56px, 8vw, 100px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--quiz-width);
   margin-block: clamp(12px, 2vh, 24px) auto;
@@ -357,7 +359,7 @@ h1, h2, p, figure { margin: 0; }
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  margin-inline-end: var(--quiz-width);
+  margin-inline-end: calc(var(--quiz-width) + var(--quiz-extension));
   padding: 8px 12px 8px 15px;
 }
 .selfie-on .stage-header { border-radius: 20px 20px 0 0; background: #f3fbee8c; }
@@ -458,7 +460,7 @@ h1, h2, p, figure { margin: 0; }
 .map-legend .legend-north { margin-left: auto; }
 .map-legend .icon { width: 15px; height: 15px; color: var(--forest); }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--forest); }
-.ar-view { gap: 8px; margin-inline-end: calc(var(--game-inset) + var(--quiz-width)); }
+.ar-view { gap: 8px; margin-inline-end: calc(var(--game-inset) + var(--quiz-width) + var(--quiz-extension)); }
 .ar-instrument {
   position: relative;
   display: grid;
@@ -660,7 +662,7 @@ h1, h2, p, figure { margin: 0; }
   z-index: 1;
   display: flex;
   flex-direction: column;
-  margin: var(--game-inset) calc(2 * var(--game-inset)) 47px 0;
+  margin: var(--game-inset) calc(2 * var(--game-inset)) 47px calc(-1 * var(--quiz-extension));
   padding: clamp(13px, 1.55vw, 23px);
   background: var(--paper);
   -webkit-backdrop-filter: blur(7px);
@@ -691,12 +693,12 @@ h1, h2, p, figure { margin: 0; }
 .mission-number b { font-size: 13px; }
 .question-title {
   margin-top: 11px;
-  font-size: clamp(22px, 2.4vw, 32px);
+  font-size: clamp(19px, 2.3vw, 30px);
   line-height: 1.28;
   font-weight: 850;
-  letter-spacing: -.025em;
-  overflow-wrap: anywhere;
-  white-space: pre-line;
+  letter-spacing: -.045em;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 .question-note { margin-top: 8px; color: var(--muted); font-size: 14px; line-height: 1.56; }
 .question-note:empty { display: none; }
@@ -834,7 +836,7 @@ h1, h2, p, figure { margin: 0; }
 }
 @media (orientation: portrait), (max-width: 710px) {
   .welcome, .game { grid-template-columns: 1fr; }
-  .game { --quiz-width: 0px; gap: 14px; }
+  .game { --quiz-width: 0px; --quiz-extension: 0px; gap: 14px; }
   .welcome { justify-items: center; gap: 24px; }
   .welcome-copy, .cover { width: min(100%, 570px); }
   .welcome h1 { font-size: clamp(43px, 8.2vw, 68px); }
@@ -853,6 +855,7 @@ h1, h2, p, figure { margin: 0; }
   .generate-btn span { max-width: 5em; font-size: 11px; white-space: normal; line-height: 1.2; }
   .restart-text { max-width: 4em; font-size: 11px; white-space: normal; }
   .stage-header h2 { font-size: 14px; }
+  .question-title { font-size: clamp(16px, 4vw, 21px); }
   .turn-btn .icon { display: none; }
   .sensor-status { display: none; }
   .score { gap: 4px; }
@@ -1161,6 +1164,9 @@ h1, h2, p, figure { margin: 0; }
           <p id="feedbackText"></p>
         </div>
         <div class="action-row">
+          <button class="quiet-btn" id="prevBtn" type="button" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-left"/></svg>上一題
+          </button>
           <button class="quiet-btn" id="chooseModeBtn" type="button" hidden>回首頁</button>
           <button class="primary-btn" id="nextBtn" type="button">
             <span id="nextBtnText">下一題</span><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg>
@@ -1275,9 +1281,9 @@ function questionFor(from,to,kind) {
   const directionName = dirName(direction) + '方';
   const revealPlace = kind === 'challenge';
   const title = kind === 'personal'
-    ? `${to.name}在我的____方。`
+    ? `${to.name}在我的____。`
     : kind === 'between'
-      ? `${to.name}在${from.name}的____方。`
+      ? `${to.name}在${from.name}的____。`
       : `${from.name}的${directionName}有____。`;
   const note = kind === 'personal' ? '從地圖中央的「我」出發看方向。'
     : kind === 'between' ? `先找到${from.name}，再看旁邊的${to.name}。`
@@ -1390,7 +1396,7 @@ function resetGame(regenerate = false) {
   const savedQuestions = !regenerate && state?.questions?.length === MAIN_COUNT ? state.questions : null;
   state = {
     world: worldGenerate(), questions: savedQuestions || [], index: 0, mode, heading: 0,
-    phase: 'playing', answered: false, hintUsed: false, choice: null, results: [], difficulty: modeChoice
+    phase: 'playing', answered: false, hintUsed: false, hints: {}, choice: null, results: [], difficulty: modeChoice
   };
   if (!savedQuestions) state.questions = generateQuestions();
   disableSensor();
@@ -1419,7 +1425,7 @@ function renderProgress() {
   ui.progressTrack.replaceChildren(...Array.from({ length: limit }, (_, index) => {
     const segment = node('span', 'progress-segment');
     segment.classList.toggle('done', index < state.results.length);
-    segment.classList.toggle('active', index === state.index && !state.answered);
+    segment.classList.toggle('active', index === state.index);
     return segment;
   }));
 }
@@ -1464,14 +1470,20 @@ function renderQuestion() {
   ui.hintBtn.setAttribute('aria-expanded', String(state.hintUsed));
   ui.hintText.hidden = !state.hintUsed;
   ui.hintText.textContent = state.hintUsed ? question.hint : '';
-  ui.feedbackBox.hidden = !state.answered;
+  // 回看歷史作答時仍可看到原來的選項、分數與解說，不能再次更改答案。
+  ui.prevBtn.hidden = state.index === 0;
+  ui.nextBtn.hidden = !state.answered;
+  ui.feedbackBox.hidden = !state.answered && state.index === 0;
+  ui.feedbackCopy.hidden = !state.answered;
 
   if (state.answered) {
-    const { correct, earned } = state.results[state.results.length - 1];
+    const { correct, earned, choice } = state.results[state.index];
     ui.feedbackBox.classList.toggle('bad', !correct);
     ui.feedbackTitle.textContent = correct ? '答對了！' : '這題答錯了。';
     ui.earned.textContent = correct ? `+${earned} 分` : '';
-    ui.feedbackText.textContent = teaching ? question.explanation : '綠色的是正確答案。';
+    const picked = question.options.find(option => option.id === choice)?.label || '未記錄';
+    const right = question.options.find(option => option.id === question.correct)?.label || '';
+    ui.feedbackText.textContent = `我的作答：${picked}。` + (teaching ? question.explanation : `正確答案：${right}。`);
     ui.nextBtnText.textContent = state.index + 1 === questionLimit() ? '看分數' : '下一題';
   }
 }
@@ -1483,7 +1495,7 @@ function answer(id) {
   state.choice = id;
   const correct = id === question.correct;
   const earned = correct ? (state.hintUsed ? 80 : POINTS_PER_QUESTION) : 0;
-  state.results.push({ correct, earned });
+  state.results.push({ correct, earned, choice: id, hintUsed: state.hintUsed });
   renderQuestion();
   renderMap();
   renderProgress();
@@ -1500,19 +1512,30 @@ function next() {
     showResults();
     return;
   }
-  advanceQuestion();
+  navigateToQuestion(state.index + 1);
 }
 
-function advanceQuestion() {
+function navigateToQuestion(index) {
+  if (index < 0 || index >= questionLimit()) return;
   state.phase = 'playing';
-  state.index++;
-  state.answered = false;
-  state.hintUsed = false;
-  state.choice = null;
+  state.index = index;
+  const recorded = state.results[index];
+  state.answered = Boolean(recorded);
+  state.choice = recorded?.choice ?? null;
+  state.hintUsed = recorded?.hintUsed ?? Boolean(state.hints[index]);
   renderQuestion();
   renderMap();
   renderProgress();
   focusQuestion();
+}
+
+function previous() {
+  if (state.phase === 'results') {
+    navigateToQuestion(questionLimit() - 1);
+    return;
+  }
+  if (state.phase !== 'playing' || state.index === 0) return;
+  navigateToQuestion(state.index - 1);
 }
 
 function showResults() {
@@ -1539,6 +1562,8 @@ function showResults() {
   }));
   ui.feedbackBox.hidden = false;
   ui.feedbackCopy.hidden = false;
+  ui.prevBtn.hidden = false;
+  ui.nextBtn.hidden = false;
   ui.feedbackBox.classList.remove('bad');
   ui.feedbackTitle.textContent = '可以再練習一次';
   ui.earned.textContent = '';
@@ -1552,6 +1577,7 @@ function showResults() {
 function showHint() {
   if (state.phase !== 'playing' || state.answered || state.hintUsed || state.difficulty !== 'teaching') return;
   state.hintUsed = true;
+  state.hints[state.index] = true;
   ui.hintBtn.hidden = true;
   ui.hintBtn.setAttribute('aria-expanded', 'true');
   ui.hintText.textContent = current().hint;
@@ -1870,6 +1896,7 @@ ui.mapModeBtn.addEventListener('click', () => setMode('map'));
 ui.arModeBtn.addEventListener('click', () => setMode('ar'));
 ui.hintBtn.addEventListener('click', showHint);
 ui.nextBtn.addEventListener('click', next);
+ui.prevBtn.addEventListener('click', previous);
 ui.cameraBtn.addEventListener('click', toggleCamera);
 ui.sensorBtn.addEventListener('click', toggleSensor);
 ui.calibrateBtn.addEventListener('click', calibrateNorth);
